@@ -1,0 +1,1475 @@
+[gd_scene load_steps=32 format=2]
+
+[ext_resource path="res://assets/bgm/_PerituneMaterial_Rapid3.ogg" type="AudioStream" id=1]
+[ext_resource path="res://combat/combat_theme.tres" type="Theme" id=2]
+[ext_resource path="res://assets/enemies/bat.png" type="Texture" id=3]
+[ext_resource path="res://assets/enemies/grundle_hurt.png" type="Texture" id=4]
+[ext_resource path="res://assets/sfx/Punch.wav" type="AudioStream" id=5]
+[ext_resource path="res://assets/combat_transition.png" type="Texture" id=6]
+[ext_resource path="res://combat/CombatGrid.gd" type="Script" id=7]
+[ext_resource path="res://assets/combat_grid.png" type="Texture" id=8]
+[ext_resource path="res://combat/gridnode.tscn" type="PackedScene" id=9]
+[ext_resource path="res://assets/m3x6.ttf" type="DynamicFontData" id=10]
+[ext_resource path="res://combat/Combat.tres.gd" type="Script" id=11]
+
+[sub_resource type="GDScript" id=23]
+
+script/source = "extends Node
+
+export(AudioStreamOGGVorbis) var bgm
+
+func _ready():
+	var screen = Screen.duplicate()
+	screen.tone = Screen.tone
+	screen.visible = true
+	add_child(screen)
+			
+	if BGM.stream != bgm:
+		BGM.stream = bgm
+		BGM.play()"
+
+[sub_resource type="GDScript" id=2]
+
+resource_name = "Combat"
+script/source = "extends Control
+
+var _enemy_hp = 0
+var _player_hp = 0
+var _enemy_str = 1
+
+var completed_attacks = []
+var total_touched = 0
+
+signal combat_ready
+signal combat_start
+signal show_damage
+signal player_hit
+signal fight_over
+signal victory
+signal player_hp_change
+signal enemy_hp_change
+signal combos(combos)
+
+var turn = false  # 0 = Player, 1 = Enemy
+
+func _ready():
+	var Enemy = Encounter.current_enemy
+	_enemy_str = Enemy.strength
+	_enemy_hp = Enemy.hp
+	_player_hp = Player.hp
+	emit_signal(\"player_hp_change\", _player_hp)
+	emit_signal(\"enemy_hp_change\", _enemy_hp)
+	$\"Control/Portrait\".texture = Enemy.portrait
+	$\"Control/Hurt\".texture = Enemy.hurt
+	$\"Control/Name\".text = Enemy.name.to_upper()
+	get_tree().paused = false
+	
+func _ready_attack():
+	completed_attacks = []
+	total_touched = 0
+	emit_signal(\"combat_ready\")
+	
+func _on_AnimationPlayer_animation_finished(anim_name):
+	if anim_name == \"HideCombat\":
+		emit_signal(\"show_damage\")
+	if anim_name == \"ShowCombat\":
+		emit_signal(\"combat_start\")
+		
+	if anim_name == \"Shake\":
+		var damage = _enemy_str
+		if damage > 0:
+			_player_hp = max(0, _player_hp - damage)
+			emit_signal(\"player_hp_change\", _player_hp)
+		
+		if _player_hp <= 0:
+			emit_signal(\"fight_over\")
+		else:
+			$UpdateTimer.start()
+	if anim_name == \"Hit\":
+		var result = _calculate_combos()
+		var damage = result[0]
+		var combos = result[1]
+		if damage > 0:
+			_enemy_hp = max(0, _enemy_hp - damage)
+		if len(combos) > 0:
+			emit_signal(\"combos\", combos)
+		else:
+			if _enemy_hp <= 0:
+				emit_signal(\"victory\")
+			else:
+				emit_signal(\"enemy_hp_change\", _enemy_hp)
+				$UpdateTimer.start()
+			
+	if anim_name == \"ShowCombos\":
+		emit_signal(\"enemy_hp_change\", _enemy_hp)
+		if _enemy_hp <= 0:
+			emit_signal(\"victory\")
+		else:
+			$UpdateTimer.start()
+
+func _on_InitialWait_timeout():
+	# determine randomly heads or tails if player or enemy goes first
+	if randi() % 2 == 1:
+		turn = false
+		_ready_attack()
+	else:
+		turn = true
+		emit_signal(\"player_hit\")
+
+func _on_UpdateTimer_timeout():
+	turn = !turn
+	if turn:
+		emit_signal(\"player_hit\")
+	else:
+		_ready_attack()
+
+func _on_CombatGrid_touched():
+	total_touched += 1
+
+func _on_CombatGrid_completed_attack(amount):
+	completed_attacks.append(amount)
+
+func _match_combo(skill, attacks, i):
+	if attacks[i] != skill.combo[0]:
+		return false
+	if i + len(skill.combo) > len(attacks):
+		return false
+	
+	for x in range(len(skill.combo)):
+		if attacks[i+x] != skill.combo[x]:
+			return false
+	return true
+	
+func _apply_combo(skill, attacks, i):
+	for x in range(len(skill.combo)):
+		attacks.remove(i)
+	attacks.insert(i, skill.out)
+
+func _calculate_combos():
+	\"\"\"
+	Iterate through completed attacks to see if any combos are present
+	\"\"\"
+	var attacks = completed_attacks.duplicate()
+	var combos = {}
+	var i = 0
+	
+	print(\"before combos: \")
+	print(attacks)
+	while i < len(attacks):
+		for skill in Skills.RANKED:
+			if _match_combo(skill, attacks, i):
+				print(\"combo matched: %s\" % skill.name)
+				_apply_combo(skill, attacks, i)
+				if combos.has(skill.name):
+					combos[skill.name] += 1
+				else:
+					combos[skill.name] = 1
+		i += 1
+	print(\"after combos: \")
+	print(attacks)
+	
+	var sum = 0
+	for a in attacks:
+		sum += a
+	return [sum, combos]
+					
+
+func _on_FightOverTimer_timeout():
+	if _enemy_hp < 0:
+		Player.experience = min(Player.experience + Encounter.current_enemy.exp_reward, Player.needed_to_level)
+		if Player.experience == Player.needed_to_level:
+			Player.level += 1
+	else:
+		Player.experience = max(Player.experience - max(1, min(100, Player.experience / 10)), 0)
+		
+	get_tree().change_scene(\"res://explore.tscn\")
+"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="StyleBoxFlat" id=5]
+
+content_margin_left = -1.0
+content_margin_right = -1.0
+content_margin_top = -1.0
+content_margin_bottom = -1.0
+bg_color = Color( 0, 0, 0, 1 )
+draw_center = true
+border_width_left = 0
+border_width_top = 0
+border_width_right = 0
+border_width_bottom = 0
+border_color = Color( 0.8, 0.8, 0.8, 1 )
+border_blend = false
+corner_radius_top_left = 0
+corner_radius_top_right = 0
+corner_radius_bottom_right = 0
+corner_radius_bottom_left = 0
+corner_detail = 8
+expand_margin_left = 0.0
+expand_margin_right = 0.0
+expand_margin_top = 0.0
+expand_margin_bottom = 0.0
+shadow_color = Color( 0, 0, 0, 0.6 )
+shadow_size = 0
+anti_aliasing = true
+anti_aliasing_size = 1
+_sections_unfolded = [ "Border", "Corner Radius" ]
+
+[sub_resource type="GDScript" id=6]
+
+script/source = "extends Label
+
+const PREFIX = \"HP\"
+var _hp = 0
+var hp setget _set_hp
+
+func _set_hp(value):
+	_hp = value
+	text = \"%s %d\" % [PREFIX, value]
+
+func _on_Combat_enemy_hp_change(amount):
+	$Tween.interpolate_property(self, \"hp\", _hp, amount, .4, Tween.TRANS_LINEAR, Tween.EASE_OUT_IN)
+	$Tween.start()
+"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="GDScript" id=7]
+
+script/source = "extends Label
+
+const PREFIX = \"HP\"
+var _hp = 0
+var hp setget _set_hp
+
+func _set_hp(value):
+	_hp = value
+	text = \"%s %d\" % [PREFIX, value]
+
+func _on_Combat_player_hp_change(amount):
+	$Tween.interpolate_property(self, \"hp\", _hp, amount, .4, Tween.TRANS_LINEAR, Tween.EASE_OUT_IN)
+	$Tween.start()
+"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="Animation" id=8]
+
+length = 1.5
+loop = false
+step = 0.05
+tracks/0/type = "value"
+tracks/0/path = NodePath("Hurt:visible")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 0.1, 0.15, 0.25, 0.4, 0.5, 1.1, 1.15 ),
+"transitions": PoolRealArray( 1, 1, 1, 1, 1, 1, 1, 1 ),
+"update": 1,
+"values": [ false, true, false, true, false, true, true, false ]
+}
+tracks/1/type = "value"
+tracks/1/path = NodePath("Portrait:visible")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/keys = {
+"times": PoolRealArray( 0, 0.1, 1.15 ),
+"transitions": PoolRealArray( 1, 1, 1 ),
+"update": 1,
+"values": [ true, false, true ]
+}
+tracks/2/type = "method"
+tracks/2/path = NodePath("PlayerHitFX")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/keys = {
+"times": PoolRealArray( 0.1 ),
+"transitions": PoolRealArray( 1 ),
+"values": [ {
+"args": [  ],
+"method": "play"
+} ]
+}
+
+[sub_resource type="Animation" id=9]
+
+length = 1.0
+loop = false
+step = 0.05
+tracks/0/type = "value"
+tracks/0/path = NodePath(".:rect_position")
+tracks/0/interp = 2
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 ),
+"transitions": PoolRealArray( 1, 1, 1, 1, 1, 1, 1, 1, 1 ),
+"update": 0,
+"values": [ Vector2( 0, 0 ), Vector2( -3, 0 ), Vector2( 0, 0 ), Vector2( 3, 0 ), Vector2( 0, 0 ), Vector2( -3, 0 ), Vector2( 0, 0 ), Vector2( 3, 0 ), Vector2( 0, 0 ) ]
+}
+
+[sub_resource type="GDScript" id=10]
+
+resource_name = "ComboDisplay"
+script/source = "extends VBoxContainer
+
+const SkillLabel = preload(\"res://combat/Combolabel.tscn\")
+
+func _ready():
+	# Called when the node is added to the scene for the first time.
+	# Initialization here
+	pass
+
+func _on_Combat_combos(combos):
+	for child in get_children():
+		child.queue_free()
+		
+	var delay = .1
+	for combo in combos.keys():
+		var amount = combos[combo]
+		var box = SkillLabel.instance()
+		box.get_node(\"Name\").text = combo
+		if amount > 1:
+			box.get_node(\"Times\").text = \"x%d\" % amount
+		box.get_node(\"Tween\").interpolate_property(box, \"self_modulate\", Color(1,1,1,0), Color(1,1,1,1), 0.2, Tween.TRANS_LINEAR, Tween.EASE_OUT_IN, delay)
+		box.get_node(\"Tween\").start()
+		add_child(box)
+		delay += .1
+
+	$\"../../AnimationPlayer\".play(\"ShowCombos\")"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="Animation" id=11]
+
+length = 2.0
+loop = false
+step = 0.5
+tracks/0/type = "value"
+tracks/0/path = NodePath(".:visible")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 2 ),
+"transitions": PoolRealArray( 1, 1 ),
+"update": 1,
+"values": [ true, false ]
+}
+
+[sub_resource type="Animation" id=19]
+
+length = 0.5
+loop = false
+step = 0.05
+tracks/0/type = "value"
+tracks/0/path = NodePath(".:rect_position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0.05, 0.35 ),
+"transitions": PoolRealArray( 1, 1 ),
+"update": 0,
+"values": [ Vector2( 0, 0 ), Vector2( -512, 0 ) ]
+}
+tracks/1/type = "value"
+tracks/1/path = NodePath("../CombatGrid:visible")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/keys = {
+"times": PoolRealArray( 0, 0.05, 0.35 ),
+"transitions": PoolRealArray( 1, 1, 1 ),
+"update": 1,
+"values": [ true, false, false ]
+}
+tracks/2/type = "value"
+tracks/2/path = NodePath("../CombatGrid:enabled")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/keys = {
+"times": PoolRealArray( 0 ),
+"transitions": PoolRealArray( 1 ),
+"update": 1,
+"values": [ false ]
+}
+
+[sub_resource type="Animation" id=20]
+
+length = 0.5
+loop = false
+step = 0.05
+tracks/0/type = "value"
+tracks/0/path = NodePath(".:rect_position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 0.3 ),
+"transitions": PoolRealArray( 1, 1 ),
+"update": 0,
+"values": [ Vector2( -512, 0 ), Vector2( 0, 0 ) ]
+}
+tracks/1/type = "value"
+tracks/1/path = NodePath("../CombatGrid:visible")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/keys = {
+"times": PoolRealArray( 0, 0.3, 0.35 ),
+"transitions": PoolRealArray( 1, 1, 1 ),
+"update": 1,
+"values": [ false, false, true ]
+}
+tracks/2/type = "value"
+tracks/2/path = NodePath("../CombatGrid:enabled")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/keys = {
+"times": PoolRealArray( 0, 0.5 ),
+"transitions": PoolRealArray( 1, 1 ),
+"update": 1,
+"values": [ false, true ]
+}
+
+[sub_resource type="Animation" id=21]
+
+length = 0.5
+loop = false
+step = 0.05
+tracks/0/type = "value"
+tracks/0/path = NodePath(".:rect_position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 0.3 ),
+"transitions": PoolRealArray( 1, 1 ),
+"update": 0,
+"values": [ Vector2( -512, 0 ), Vector2( 0, 0 ) ]
+}
+tracks/1/type = "value"
+tracks/1/path = NodePath("../FightOverScreen:visible")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/keys = {
+"times": PoolRealArray( 0, 0.4 ),
+"transitions": PoolRealArray( 1, 1 ),
+"update": 1,
+"values": [ false, true ]
+}
+tracks/2/type = "value"
+tracks/2/path = NodePath("../CombatGrid:enabled")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/keys = {
+"times": PoolRealArray( 0 ),
+"transitions": PoolRealArray( 1 ),
+"update": 1,
+"values": [ false ]
+}
+
+[sub_resource type="GDScript" id=12]
+
+script/source = "extends Panel
+
+func _ready():
+	pass
+
+func _on_Combat_fight_over():
+	$Label.text = \"Defeated\"
+	var exp_lost = Player.experience / 10
+	$RichTextLabel.bbcode_text = \"[center]Exp\\n%d -> %d[/center]\" % [Player.experience, Player.experience - exp_lost]
+	$FightOverTimer.start()
+
+func _on_Combat_victory():
+	$Label.text = \"Victory\"
+	var exp_gain = Encounter.current_enemy.exp_reward
+	var text = \"Exp\\n%d -> %d\" % [Player.experience, Player.experience + exp_gain]
+	
+	if Player.experience + exp_gain > Player.needed_to_level:
+		text += \"\\nLevel Up\\nHP %d -> %d\" % [Player.hp, Player.next_hp]
+		
+	$RichTextLabel.bbcode_text = \"[center]%s[/center]\" % text
+	$FightOverTimer.start()
+"
+
+[sub_resource type="DynamicFont" id=13]
+
+size = 16
+use_mipmaps = false
+use_filter = false
+extra_spacing_char = -2
+font_data = ExtResource( 10 )
+_sections_unfolded = [ "Extra Spacing", "Font", "Settings" ]
+
+[sub_resource type="GDScript" id=14]
+
+script/source = "extends RichTextLabel
+
+func _on_CombatGrid_completed_attack(amount):
+	text += \" %d\" % amount
+
+func _on_Combat_combat_ready():
+	text = \"\"
+"
+
+[sub_resource type="Gradient" id=15]
+
+offsets = PoolRealArray( 0, 1 )
+colors = PoolColorArray( 0.488281, 0.488281, 0.488281, 1, 0.488281, 0.488281, 0.488281, 1 )
+
+[sub_resource type="GradientTexture" id=16]
+
+flags = 4
+gradient = SubResource( 15 )
+width = 4
+
+[sub_resource type="GDScript" id=17]
+
+script/source = "extends TextureRect
+
+# class member variables go here, for example:
+# var a = 2
+# var b = \"textvar\"
+
+onready var timer = $\"../AttackTimer\"
+
+func _ready():
+	# Called when the node is added to the scene for the first time.
+	# Initialization here
+	pass
+
+func _process(delta):
+	self.rect_size.x = 52.0 * (timer.time_left / timer.wait_time)
+"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="Animation" id=18]
+
+length = 0.7
+loop = false
+step = 0.1
+tracks/0/type = "value"
+tracks/0/path = NodePath(".:rect_position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0.1, 0.3, 0.5 ),
+"transitions": PoolRealArray( 1, 1, 1 ),
+"update": 0,
+"values": [ Vector2( -512, 0 ), Vector2( 0, 0 ), Vector2( -512, 0 ) ]
+}
+tracks/1/type = "method"
+tracks/1/path = NodePath("..")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/keys = {
+"times": PoolRealArray( 0.3 ),
+"transitions": PoolRealArray( 1 ),
+"values": [ {
+"args": [  ],
+"method": "setup_grid"
+} ]
+}
+tracks/2/type = "method"
+tracks/2/path = NodePath("../AttackTimer")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/keys = {
+"times": PoolRealArray( 0, 0.7 ),
+"transitions": PoolRealArray( 1, 1 ),
+"values": [ {
+"args": [ "paused", true ],
+"method": ""
+}, {
+"args": [ "paused", false ],
+"method": ""
+} ]
+}
+
+[sub_resource type="StyleBoxFlat" id=22]
+
+content_margin_left = -1.0
+content_margin_right = -1.0
+content_margin_top = -1.0
+content_margin_bottom = -1.0
+bg_color = Color( 0, 0, 0, 1 )
+draw_center = true
+border_width_left = 0
+border_width_top = 0
+border_width_right = 0
+border_width_bottom = 0
+border_color = Color( 0.8, 0.8, 0.8, 1 )
+border_blend = false
+corner_radius_top_left = 0
+corner_radius_top_right = 0
+corner_radius_bottom_right = 0
+corner_radius_bottom_left = 0
+corner_detail = 8
+expand_margin_left = 0.0
+expand_margin_right = 0.0
+expand_margin_top = 0.0
+expand_margin_bottom = 0.0
+shadow_color = Color( 0, 0, 0, 0.6 )
+shadow_size = 0
+anti_aliasing = true
+anti_aliasing_size = 1
+
+[node name="Combat" type="Node" index="0"]
+
+script = SubResource( 23 )
+bgm = ExtResource( 1 )
+
+[node name="Control" type="Control" parent="." index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+theme = ExtResource( 2 )
+script = SubResource( 2 )
+_sections_unfolded = [ "Rect", "Theme" ]
+
+[node name="Control" type="Control" parent="Control" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+
+[node name="Portrait" type="TextureRect" parent="Control/Control" index="0"]
+
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+margin_left = -32.0
+margin_right = 32.0
+margin_bottom = 52.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+texture = ExtResource( 3 )
+stretch_mode = 0
+_sections_unfolded = [ "Visibility" ]
+
+[node name="Hurt" type="TextureRect" parent="Control/Control" index="1"]
+
+visible = false
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+margin_left = -32.0
+margin_right = 32.0
+margin_bottom = 52.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+texture = ExtResource( 4 )
+stretch_mode = 0
+_sections_unfolded = [ "Visibility" ]
+
+[node name="EnemyHP" type="Label" parent="Control/Control" index="2"]
+
+editor/display_folded = true
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+margin_left = -32.0
+margin_top = -13.0
+margin_right = 31.0
+margin_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_styles/normal = SubResource( 5 )
+custom_colors/font_color = Color( 1, 1, 1, 1 )
+text = "HP 945"
+align = 2
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+script = SubResource( 6 )
+_sections_unfolded = [ "custom_styles" ]
+
+[node name="Tween" type="Tween" parent="Control/Control/EnemyHP" index="0"]
+
+repeat = false
+playback_process_mode = 1
+playback_speed = 1.0
+playback/active = false
+playback/repeat = false
+playback/speed = 1.0
+
+[node name="Name" type="Label" parent="Control/Control" index="3"]
+
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_top = -21.0
+margin_bottom = -8.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_colors/font_color = Color( 1, 1, 1, 1 )
+custom_colors/font_color_shadow = Color( 0, 0, 0, 1 )
+text = "GRUNDLE"
+align = 2
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "custom_colors" ]
+
+[node name="MyHP" type="Label" parent="Control/Control" index="4"]
+
+editor/display_folded = true
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 1.0
+margin_top = 51.0
+margin_right = 64.0
+margin_bottom = 65.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_colors/font_color = Color( 1, 1, 1, 1 )
+custom_colors/font_color_shadow = Color( 0, 0, 0, 1 )
+custom_constants/shadow_offset_x = 1
+custom_constants/shadow_offset_y = 1
+custom_constants/shadow_as_outline = 1
+text = "HP 120"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+script = SubResource( 7 )
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="Tween" type="Tween" parent="Control/Control/MyHP" index="0"]
+
+repeat = false
+playback_process_mode = 1
+playback_speed = 1.0
+playback/active = false
+playback/repeat = false
+playback/speed = 1.0
+
+[node name="PlayerHitFX" type="AudioStreamPlayer" parent="Control/Control" index="5"]
+
+stream = ExtResource( 5 )
+volume_db = -15.0
+pitch_scale = 1.0
+autoplay = false
+mix_target = 0
+bus = "Master"
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Control/Control" index="6"]
+
+root_node = NodePath("..")
+autoplay = ""
+playback_process_mode = 1
+playback_default_blend_time = 0.0
+playback_speed = 1.0
+anims/Hit = SubResource( 8 )
+anims/Shake = SubResource( 9 )
+blend_times = [  ]
+_sections_unfolded = [ "Pause" ]
+
+[node name="CombosUsed" type="Panel" parent="Control" index="1"]
+
+editor/display_folded = true
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+_sections_unfolded = [ "Visibility" ]
+
+[node name="Label" type="Label" parent="Control/CombosUsed" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 1.0
+margin_top = -3.0
+margin_right = 64.0
+margin_bottom = 10.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "Skills Used"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="MarginContainer" type="MarginContainer" parent="Control/CombosUsed" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_top = 10.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_constants/margin_right = 0
+custom_constants/margin_top = 0
+custom_constants/margin_left = 1
+custom_constants/margin_bottom = 0
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/CombosUsed/MarginContainer" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 1.0
+margin_right = 64.0
+margin_bottom = 54.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_constants/separation = 0
+alignment = 0
+script = SubResource( 10 )
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Control/CombosUsed" index="2"]
+
+root_node = NodePath("..")
+autoplay = ""
+playback_process_mode = 1
+playback_default_blend_time = 0.0
+playback_speed = 1.0
+anims/ShowCombos = SubResource( 11 )
+blend_times = [  ]
+
+[node name="combat_transition" type="TextureRect" parent="Control" index="2"]
+
+editor/display_folded = true
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = -512.0
+margin_bottom = 64.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+texture = ExtResource( 6 )
+stretch_mode = 0
+_sections_unfolded = [ "Rect" ]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Control/combat_transition" index="0"]
+
+root_node = NodePath("..")
+autoplay = ""
+playback_process_mode = 1
+playback_default_blend_time = 0.0
+playback_speed = 1.0
+anims/HideCombat = SubResource( 19 )
+anims/ShowCombat = SubResource( 20 )
+anims/ShowVictory = SubResource( 21 )
+blend_times = [  ]
+
+[node name="FightOverScreen" type="Panel" parent="Control" index="3"]
+
+editor/display_folded = true
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+script = SubResource( 12 )
+_sections_unfolded = [ "Visibility" ]
+
+[node name="Label" type="Label" parent="Control/FightOverScreen" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = -3.0
+margin_right = 64.0
+margin_bottom = 11.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_colors/font_color_shadow = Color( 0.488281, 0.488281, 0.488281, 1 )
+text = "Defeated"
+align = 1
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="RichTextLabel" type="RichTextLabel" parent="Control/FightOverScreen" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_top = 12.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+bbcode_enabled = true
+bbcode_text = ""
+visible_characters = -1
+percent_visible = 1.0
+meta_underlined = true
+tab_size = 4
+text = ""
+scroll_active = true
+scroll_following = false
+selection_enabled = false
+override_selected_font_color = false
+_sections_unfolded = [ "BBCode" ]
+
+[node name="FightOverTimer" type="Timer" parent="Control/FightOverScreen" index="2"]
+
+process_mode = 1
+wait_time = 5.0
+one_shot = true
+autostart = false
+
+[node name="CombatGrid" type="Panel" parent="Control" index="4"]
+
+editor/display_folded = true
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 2
+size_flags_horizontal = 1
+size_flags_vertical = 1
+script = ExtResource( 7 )
+enabled = false
+
+[node name="Grid" type="TextureRect" parent="Control/CombatGrid" index="0"]
+
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -24.0
+margin_top = -24.0
+margin_right = 24.0
+margin_bottom = 24.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+texture = ExtResource( 8 )
+stretch_mode = 0
+
+[node name="Cells" type="Control" parent="Control/CombatGrid/Grid" index="0"]
+
+editor/display_folded = true
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+
+[node name="7" parent="Control/CombatGrid/Grid/Cells" index="0" instance=ExtResource( 9 )]
+
+margin_left = 2.0
+margin_top = 2.0
+margin_right = 16.0
+margin_bottom = 16.0
+
+[node name="8" parent="Control/CombatGrid/Grid/Cells" index="1" instance=ExtResource( 9 )]
+
+margin_left = 17.0
+margin_top = 2.0
+margin_right = 31.0
+margin_bottom = 16.0
+
+[node name="9" parent="Control/CombatGrid/Grid/Cells" index="2" instance=ExtResource( 9 )]
+
+margin_left = 32.0
+margin_top = 2.0
+margin_right = 46.0
+margin_bottom = 16.0
+
+[node name="4" parent="Control/CombatGrid/Grid/Cells" index="3" instance=ExtResource( 9 )]
+
+margin_left = 2.0
+margin_top = 17.0
+margin_right = 16.0
+margin_bottom = 31.0
+
+[node name="5" parent="Control/CombatGrid/Grid/Cells" index="4" instance=ExtResource( 9 )]
+
+margin_left = 17.0
+margin_top = 17.0
+margin_right = 31.0
+margin_bottom = 31.0
+
+[node name="6" parent="Control/CombatGrid/Grid/Cells" index="5" instance=ExtResource( 9 )]
+
+margin_left = 32.0
+margin_top = 17.0
+margin_right = 46.0
+margin_bottom = 31.0
+
+[node name="1" parent="Control/CombatGrid/Grid/Cells" index="6" instance=ExtResource( 9 )]
+
+margin_left = 2.0
+margin_top = 32.0
+margin_right = 16.0
+margin_bottom = 46.0
+
+[node name="2" parent="Control/CombatGrid/Grid/Cells" index="7" instance=ExtResource( 9 )]
+
+margin_left = 17.0
+margin_top = 32.0
+margin_right = 31.0
+margin_bottom = 46.0
+
+[node name="3" parent="Control/CombatGrid/Grid/Cells" index="8" instance=ExtResource( 9 )]
+
+margin_left = 32.0
+margin_top = 32.0
+margin_right = 46.0
+margin_bottom = 46.0
+
+[node name="Traced" type="Line2D" parent="Control/CombatGrid/Grid" index="1"]
+
+points = PoolVector2Array(  )
+width = 2.0
+default_color = Color( 1, 1, 1, 1 )
+texture_mode = 5
+joint_mode = 2
+begin_cap_mode = 2
+end_cap_mode = 1
+sharp_limit = 2.0
+round_precision = 8
+_sections_unfolded = [ "Capping", "Transform" ]
+
+[node name="Combo" type="RichTextLabel" parent="Control/CombatGrid" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+margin_left = 1.0
+margin_top = -4.0
+margin_right = 1.0
+margin_bottom = 12.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_fonts/normal_font = SubResource( 13 )
+custom_colors/default_color = Color( 1, 1, 1, 1 )
+bbcode_enabled = true
+bbcode_text = "3 3 3 3 3"
+visible_characters = -1
+percent_visible = 1.0
+meta_underlined = true
+tab_size = 4
+text = "3 3 3 3 3"
+scroll_active = false
+scroll_following = false
+selection_enabled = false
+override_selected_font_color = false
+script = SubResource( 14 )
+_sections_unfolded = [ "BBCode", "custom_colors" ]
+
+[node name="GoodJob" type="AudioStreamPlayer" parent="Control/CombatGrid" index="2"]
+
+stream = null
+volume_db = 0.0
+pitch_scale = 1.0
+autoplay = false
+mix_target = 0
+bus = "Master"
+
+[node name="TimeLeft" type="TextureRect" parent="Control/CombatGrid" index="3"]
+
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+margin_left = -26.0
+margin_top = -5.0
+margin_right = 26.0
+margin_bottom = -3.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+texture = SubResource( 16 )
+expand = true
+stretch_mode = 2
+script = SubResource( 17 )
+_sections_unfolded = [ "Rect", "Transform" ]
+
+[node name="puzzle_transition" type="TextureRect" parent="Control/CombatGrid" index="4"]
+
+editor/display_folded = true
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = -512.0
+margin_bottom = 64.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+texture = ExtResource( 6 )
+stretch_mode = 0
+_sections_unfolded = [ "Mouse" ]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Control/CombatGrid/puzzle_transition" index="0"]
+
+root_node = NodePath("..")
+autoplay = ""
+playback_process_mode = 1
+playback_default_blend_time = 0.0
+playback_speed = 1.0
+anims/RefreshPuzzle = SubResource( 18 )
+blend_times = [  ]
+
+[node name="AttackTimer" type="Timer" parent="Control/CombatGrid" index="5"]
+
+process_mode = 1
+wait_time = 5.0
+one_shot = true
+autostart = false
+
+[node name="InitialWait" type="Timer" parent="Control" index="5"]
+
+process_mode = 1
+wait_time = 3.0
+one_shot = true
+autostart = true
+
+[node name="UpdateTimer" type="Timer" parent="Control" index="6"]
+
+process_mode = 1
+wait_time = 1.0
+one_shot = true
+autostart = false
+
+[node name="HelpPage" type="Panel" parent="Control" index="7"]
+
+pause_mode = 2
+editor/display_folded = true
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_right = 64.0
+margin_bottom = 64.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_styles/panel = SubResource( 22 )
+script = ExtResource( 11 )
+_sections_unfolded = [ "Mouse", "Pause" ]
+
+[node name="pager" type="Label" parent="Control/HelpPage" index="0"]
+
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+margin_left = -25.0
+margin_top = -13.0
+margin_right = 25.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "1 / 4"
+align = 1
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Pages" type="Control" parent="Control/HelpPage" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+
+[node name="1" type="Label" parent="Control/HelpPage/Pages" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 1.0
+margin_top = 1.0
+margin_right = -1.0
+margin_bottom = -10.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_constants/line_spacing = -3
+text = "Connect White to Red as many times as possible in 5 seconds"
+align = 1
+autowrap = true
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "BBCode" ]
+
+[node name="2" type="Label" parent="Control/HelpPage/Pages" index="1"]
+
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 1.0
+margin_top = 1.0
+margin_right = -1.0
+margin_bottom = -10.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_constants/line_spacing = -3
+text = "Use Mouse or Numpad to draw the line
+"
+align = 1
+autowrap = true
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "BBCode" ]
+
+[node name="3" type="Label" parent="Control/HelpPage/Pages" index="2"]
+
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 1.0
+margin_top = 1.0
+margin_right = -1.0
+margin_bottom = -11.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_constants/line_spacing = -3
+text = "The longer the line, the more damage dealt"
+align = 1
+autowrap = true
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "BBCode" ]
+
+[node name="4" type="Label" parent="Control/HelpPage/Pages" index="3"]
+
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 1.0
+margin_top = 1.0
+margin_right = -1.0
+margin_bottom = -11.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_constants/line_spacing = -3
+text = "The line can not overlap itself"
+align = 1
+autowrap = true
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "BBCode" ]
+
+[connection signal="combat_ready" from="Control" to="Control/combat_transition/AnimationPlayer" method="play" binds= [ "ShowCombat" ]]
+
+[connection signal="combat_ready" from="Control" to="Control/CombatGrid" method="setup_grid"]
+
+[connection signal="combat_ready" from="Control" to="Control/CombatGrid/Combo" method="_on_Combat_combat_ready"]
+
+[connection signal="combat_start" from="Control" to="Control/CombatGrid/AttackTimer" method="start"]
+
+[connection signal="combos" from="Control" to="Control/CombosUsed/MarginContainer/VBoxContainer" method="_on_Combat_combos"]
+
+[connection signal="enemy_hp_change" from="Control" to="Control/Control/EnemyHP" method="_on_Combat_enemy_hp_change"]
+
+[connection signal="fight_over" from="Control" to="Control/combat_transition/AnimationPlayer" method="play" binds= [ "ShowVictory" ]]
+
+[connection signal="fight_over" from="Control" to="Control/FightOverScreen" method="_on_Combat_fight_over"]
+
+[connection signal="player_hit" from="Control" to="Control/Control/AnimationPlayer" method="play" binds= [ "Shake" ]]
+
+[connection signal="player_hp_change" from="Control" to="Control/Control/MyHP" method="_on_Combat_player_hp_change"]
+
+[connection signal="show_damage" from="Control" to="Control/Control/AnimationPlayer" method="play" binds= [ "Hit" ]]
+
+[connection signal="victory" from="Control" to="Control/combat_transition/AnimationPlayer" method="play" binds= [ "ShowVictory" ]]
+
+[connection signal="victory" from="Control" to="Control/FightOverScreen" method="_on_Combat_victory"]
+
+[connection signal="animation_finished" from="Control/Control/AnimationPlayer" to="Control" method="_on_AnimationPlayer_animation_finished"]
+
+[connection signal="animation_finished" from="Control/CombosUsed/AnimationPlayer" to="Control" method="_on_AnimationPlayer_animation_finished"]
+
+[connection signal="animation_finished" from="Control/combat_transition/AnimationPlayer" to="Control" method="_on_AnimationPlayer_animation_finished"]
+
+[connection signal="timeout" from="Control/FightOverScreen/FightOverTimer" to="Control" method="_on_FightOverTimer_timeout"]
+
+[connection signal="completed_attack" from="Control/CombatGrid" to="Control" method="_on_CombatGrid_completed_attack"]
+
+[connection signal="completed_attack" from="Control/CombatGrid" to="Control/CombatGrid/Combo" method="_on_CombatGrid_completed_attack"]
+
+[connection signal="next_puzzle" from="Control/CombatGrid" to="Control/CombatGrid/puzzle_transition/AnimationPlayer" method="play" binds= [ "RefreshPuzzle" ]]
+
+[connection signal="touched" from="Control/CombatGrid" to="Control" method="_on_CombatGrid_touched"]
+
+[connection signal="animation_finished" from="Control/CombatGrid/puzzle_transition/AnimationPlayer" to="Control" method="_on_AnimationPlayer_animation_finished"]
+
+[connection signal="timeout" from="Control/CombatGrid/AttackTimer" to="Control/combat_transition/AnimationPlayer" method="play" binds= [ "HideCombat" ]]
+
+[connection signal="timeout" from="Control/CombatGrid/AttackTimer" to="Control/CombatGrid" method="_on_AttackTimer_timeout"]
+
+[connection signal="timeout" from="Control/InitialWait" to="Control" method="_on_InitialWait_timeout"]
+
+[connection signal="timeout" from="Control/UpdateTimer" to="Control" method="_on_UpdateTimer_timeout"]
+
+

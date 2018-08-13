@@ -1,0 +1,610 @@
+[gd_scene load_steps=11 format=2]
+
+[ext_resource path="res://assets/ui.tres" type="Theme" id=1]
+[ext_resource path="res://assets/key.png" type="Texture" id=2]
+[ext_resource path="res://assets/up.png" type="Texture" id=3]
+
+[sub_resource type="GDScript" id=7]
+
+script/source = "extends Node
+
+func _ready():		
+	var screen = Screen.duplicate()
+	screen.tone = Screen.tone
+	screen.visible = true
+	add_child(screen)
+	"
+
+[sub_resource type="GDScript" id=8]
+
+script/source = "extends Control
+
+var selected = 0
+
+signal show_skills
+signal show_inventory
+
+func _ready():
+	$pointer.rect_position.y = 0
+	pass
+
+func _next():
+	selected = min(2, selected + 1)
+	$pointer.rect_position.y = 13 * selected
+	
+func _prev():
+	selected = max(0, selected - 1)
+	$pointer.rect_position.y = 13 * selected
+
+func _unhandled_key_input(event):
+	if event.is_action_pressed(\"ui_down\"):
+		_next()	
+		get_tree().set_input_as_handled()
+	elif event.is_action_pressed(\"ui_up\"):
+		_prev()
+		get_tree().set_input_as_handled()
+	elif event.is_action_pressed(\"ui_accept\"):
+		match selected:
+			0:
+				print(\"show inventory\")
+				emit_signal(\"show_inventory\")
+			1:
+				print(\"show skills\")
+				emit_signal(\"show_skills\")
+			2:
+				get_tree().quit()
+		get_tree().set_input_as_handled()
+	elif event.is_action_pressed(\"ui_cancel\"):
+		get_tree().change_scene(\"res://explore.tscn\")
+		get_tree().set_input_as_handled()"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="GDScript" id=9]
+
+script/source = "extends Control
+
+func _on_Options_show_skills():
+	self.visible = true
+
+
+func _on_List_back():
+	self.visible = false
+
+
+func _on_Options_show_inventory():
+	pass # replace with function body
+"
+
+[sub_resource type="GDScript" id=10]
+
+script/source = "extends VBoxContainer
+
+const SkillCell = preload(\"res://menu/Skill.tscn\")
+
+signal back
+
+func _ready():
+	for s in Skills.ALL:
+		var cell = SkillCell.instance()
+		cell.skill = s
+		add_child(cell)
+
+func _unhandled_key_input(event):
+	if not $\"../../\".visible:
+		return
+		
+	if event.is_action_pressed(\"ui_down\"):
+		get_parent().scroll_vertical += 16
+		get_tree().set_input_as_handled()
+	elif event.is_action_pressed(\"ui_up\"):
+		get_parent().scroll_vertical -= 16
+		get_tree().set_input_as_handled()
+	elif event.is_action_pressed(\"ui_cancel\"):
+		emit_signal(\"back\")
+		get_tree().set_input_as_handled()"
+_sections_unfolded = [ "Resource" ]
+
+[sub_resource type="GDScript" id=11]
+
+script/source = "extends Control
+
+func _on_Options_show_inventory():
+	self.visible = true
+
+
+func _on_List_back():
+	self.visible = false
+"
+
+[sub_resource type="GDScript" id=6]
+
+script/source = "extends Label
+
+func _ready():
+	var _state = Player.dungeons[Player.currently_exploring]
+	var total = _state[\"__treasure_total\"]
+	var collected = _state[\"__treasure_found\"]
+	text = \"%d/%d\" % [collected, total]"
+
+[sub_resource type="GDScript" id=4]
+
+script/source = "extends VBoxContainer
+
+const ItemLabel = preload(\"res://menu/ItemLabel.tscn\")
+
+signal back
+
+func _ready():
+	for s in Player.inventory:
+		var cell = ItemLabel.instance()
+		cell.text = s.name
+		add_child(cell)
+
+func _unhandled_key_input(event):
+	if not $\"../../\".visible:
+		return
+		
+	if event.is_action_pressed(\"ui_down\"):
+		get_parent().scroll_vertical += 16
+		get_tree().set_input_as_handled()
+	elif event.is_action_pressed(\"ui_up\"):
+		get_parent().scroll_vertical -= 16
+		get_tree().set_input_as_handled()
+	elif event.is_action_pressed(\"ui_cancel\"):
+		emit_signal(\"back\")
+		get_tree().set_input_as_handled()"
+_sections_unfolded = [ "Resource" ]
+
+[node name="Menu" type="Node"]
+
+script = SubResource( 7 )
+
+[node name="Panel" type="Panel" parent="." index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+theme = ExtResource( 1 )
+_sections_unfolded = [ "Theme" ]
+
+[node name="Main" type="Panel" parent="Panel" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="Progress" type="Control" parent="Panel/Main" index="0"]
+
+editor/display_folded = true
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+margin_left = -29.0
+margin_right = 29.0
+margin_bottom = 17.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+
+[node name="key" type="TextureRect" parent="Panel/Main/Progress" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 1.0
+margin_top = 5.0
+margin_right = 9.0
+margin_bottom = 13.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 0
+texture = ExtResource( 2 )
+stretch_mode = 3
+_sections_unfolded = [ "Size Flags" ]
+
+[node name="Label2" type="Label" parent="Panel/Main/Progress" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 9.0
+margin_top = 1.0
+margin_right = 24.0
+margin_bottom = 14.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "1"
+align = 2
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+_sections_unfolded = [ "Size Flags" ]
+
+[node name="up" type="TextureRect" parent="Panel/Main/Progress" index="2"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 33.0
+margin_top = 5.0
+margin_right = 41.0
+margin_bottom = 13.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 3
+texture = ExtResource( 3 )
+stretch_mode = 3
+
+[node name="Label3" type="Label" parent="Panel/Main/Progress" index="3"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 43.0
+margin_top = 1.0
+margin_right = 58.0
+margin_bottom = 14.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "1"
+align = 2
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Options" type="Control" parent="Panel/Main" index="1"]
+
+editor/display_folded = true
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 18.0
+margin_right = 64.0
+margin_bottom = 44.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+script = SubResource( 8 )
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="pointer" type="Label" parent="Panel/Main/Options" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 2.0
+margin_right = 6.0
+margin_bottom = 13.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 0
+size_flags_vertical = 0
+custom_constants/shadow_offset_x = 1
+custom_constants/shadow_offset_y = 0
+text = ">"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/Main/Options" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 8.0
+margin_right = 64.0
+margin_bottom = 26.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_constants/separation = 0
+alignment = 0
+_sections_unfolded = [ "Margin" ]
+
+[node name="Items" type="Label" parent="Panel/Main/Options/VBoxContainer" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_right = 56.0
+margin_bottom = 13.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_colors/font_color_shadow = Color( 0, 0, 0, 1 )
+text = "Items"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Skills" type="Label" parent="Panel/Main/Options/VBoxContainer" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 13.0
+margin_right = 56.0
+margin_bottom = 26.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_colors/font_color_shadow = Color( 0, 0, 0, 1 )
+text = "Skills"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Quit" type="Label" parent="Panel/Main/Options/VBoxContainer" index="2"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 26.0
+margin_right = 56.0
+margin_bottom = 39.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+custom_colors/font_color_shadow = Color( 0, 0, 0, 1 )
+text = "Quit Game"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Skills" type="Panel" parent="Panel" index="1"]
+
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+script = SubResource( 9 )
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Panel/Skills" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+scroll_horizontal_enabled = false
+scroll_horizontal = 0
+scroll_vertical_enabled = true
+scroll_vertical = 0
+scroll_deadzone = 0
+_sections_unfolded = [ "Theme" ]
+
+[node name="List" type="VBoxContainer" parent="Panel/Skills/ScrollContainer" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_constants/separation = 0
+alignment = 0
+script = SubResource( 10 )
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="Inventory" type="Panel" parent="Panel" index="2"]
+
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+script = SubResource( 11 )
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="Collected" type="HBoxContainer" parent="Panel/Inventory" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 1.0
+margin_top = 1.0
+margin_right = 63.0
+margin_bottom = 14.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 0
+alignment = 0
+_sections_unfolded = [ "Size Flags" ]
+
+[node name="Label" type="Label" parent="Panel/Inventory/Collected" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_right = 34.0
+margin_bottom = 13.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "Collected"
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+
+[node name="Count" type="Label" parent="Panel/Inventory/Collected" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 38.0
+margin_right = 62.0
+margin_bottom = 13.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "8/25"
+align = 2
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+script = SubResource( 6 )
+_sections_unfolded = [ "Size Flags", "custom_colors" ]
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Panel/Inventory" index="1"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 1.0
+margin_top = 14.0
+margin_right = 63.0
+margin_bottom = 63.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = true
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 0
+scroll_horizontal_enabled = false
+scroll_horizontal = 0
+scroll_vertical_enabled = true
+scroll_vertical = 0
+scroll_deadzone = 0
+_sections_unfolded = [ "Size Flags" ]
+
+[node name="List" type="VBoxContainer" parent="Panel/Inventory/ScrollContainer" index="0"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 1
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_constants/separation = 0
+alignment = 0
+script = SubResource( 4 )
+_sections_unfolded = [ "custom_constants" ]
+
+[node name="MarginContainer" type="MarginContainer" parent="Panel/Inventory" index="2"]
+
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_constants/margin_right = 1
+custom_constants/margin_top = 1
+custom_constants/margin_left = 1
+custom_constants/margin_bottom = 1
+_sections_unfolded = [ "custom_constants" ]
+
+[connection signal="show_inventory" from="Panel/Main/Options" to="Panel/Inventory" method="_on_Options_show_inventory"]
+
+[connection signal="show_skills" from="Panel/Main/Options" to="Panel/Skills" method="_on_Options_show_skills"]
+
+[connection signal="back" from="Panel/Skills/ScrollContainer/List" to="Panel/Skills" method="_on_List_back"]
+
+[connection signal="back" from="Panel/Inventory/ScrollContainer/List" to="Panel/Inventory" method="_on_List_back"]
+
+

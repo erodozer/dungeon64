@@ -1,0 +1,219 @@
+[gd_scene load_steps=4 format=2]
+
+[ext_resource path="res://env.tres" type="Environment" id=1]
+[ext_resource path="res://assets/sfx/footsteps.wav" type="AudioStream" id=2]
+
+[sub_resource type="GDScript" id=1]
+
+resource_local_to_scene = true
+resource_name = "Player"
+script/source = "extends Spatial
+
+const Direction = preload(\"res://common/enums.gd\").Direction
+
+var _pause_input = false
+var facing = Direction.NORTH
+var keys
+
+signal direction_changed(facing)
+signal moved
+
+func _ready():
+	# Called when the node is added to the scene for the first time.
+	# Initialization here
+	_pause_input = false
+	$Tween.connect(\"tween_completed\", self, \"_tween_completed\")
+	
+func _tween_completed(object, key):
+	_pause_input = false
+	if key == \":translation\":
+		emit_signal(\"moved\")
+		
+func _enter_tree():
+	translation = Player.position
+	facing = Player.facing
+	match facing:
+		Direction.NORTH:			
+			rotation_degrees = Vector3(0, 0, 0)
+		Direction.SOUTH:
+			rotation_degrees = Vector3(0, 180, 0)
+		Direction.EAST:
+			rotation_degrees = Vector3(0, 90, 0)
+		Direction.WEST:
+			rotation_degrees = Vector3(0, 270, 0)
+	emit_signal(\"direction_changed\", facing)
+	
+func _exit_tree():
+	Player.position = translation
+	Player.facing = facing
+	
+func turn_left():
+	match facing:
+		Direction.NORTH:
+			return Direction.WEST
+		Direction.EAST:
+			return Direction.NORTH
+		Direction.SOUTH:
+			return Direction.EAST
+		Direction.WEST:
+			return Direction.SOUTH
+			
+	return Direction.NORTH
+	
+func turn_right():
+	match facing:
+		Direction.NORTH:
+			return Direction.EAST
+		Direction.EAST:
+			return Direction.SOUTH
+		Direction.SOUTH:
+			return Direction.WEST
+		Direction.WEST:
+			return Direction.NORTH
+	return Direction.NORTH
+	
+func _can_move_forward():
+	return not ($RayCast.get_collider() and $RayCast.is_colliding())
+	
+func _can_move_backward():
+	return not ($RayCastBack.get_collider() and $RayCastBack.is_colliding())
+
+func _interact():
+	\"\"\"
+	Interacts with the scripted object that the player is facing
+	\"\"\"
+	if $RayCast.is_colliding():
+		var result = $RayCast.get_collider()
+		if result.has_method(\"interact\"):
+			result.interact()
+
+func _process(delta):
+	if _pause_input:
+		return
+		
+	var property = null
+	var start = null
+	var end = null
+	if Input.is_action_pressed(\"ui_left\"):
+		property = \"rotation_degrees\"
+		start = self.rotation_degrees
+		end = self.rotation_degrees + Vector3(0, +90, 0)
+		facing = turn_left()
+		emit_signal(\"direction_changed\", facing)
+	if Input.is_action_pressed(\"ui_right\"):
+		property = \"rotation_degrees\"
+		start = self.rotation_degrees
+		end = self.rotation_degrees + Vector3(0, -90, 0)
+		facing = turn_right()
+		emit_signal(\"direction_changed\", facing)
+	if Input.is_action_pressed(\"ui_up\"):
+		if not _can_move_forward():
+			return
+		var move = self.global_transform.basis[2].normalized() * -2
+		property = \"translation\"
+		start = self.translation
+		end = self.translation + move
+		$Footsteps.play()
+	if Input.is_action_pressed(\"ui_down\"):
+		if not _can_move_backward():
+			return
+		var move = self.global_transform.basis[2].normalized() * 2
+		property = \"translation\"
+		start = self.translation
+		end = self.translation + move
+		$Footsteps.play()
+	
+	if property != null:
+		$Tween.interpolate_property(self, property, start, end, 0.5, Tween.TRANS_LINEAR, Tween.EASE_OUT_IN)
+		$Tween.start()
+		_pause_input = true
+		get_tree().set_input_as_handled()
+
+	if Input.is_action_just_pressed(\"ui_accept\"):
+		_interact()
+		get_tree().set_input_as_handled()
+
+		
+func _on_Explore_combat_start():
+	_pause_input = true
+"
+_sections_unfolded = [ "Resource" ]
+
+[node name="Player" type="Spatial"]
+
+script = SubResource( 1 )
+_sections_unfolded = [ "Collision", "Transform" ]
+
+[node name="Camera" type="Camera" parent="." index="0"]
+
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.10796, 0 )
+keep_aspect = 1
+cull_mask = 1048575
+environment = ExtResource( 1 )
+h_offset = 0.0
+v_offset = 0.0
+doppler_tracking = 1
+projection = 0
+current = true
+fov = 70.0
+size = 1.0
+near = 0.05
+far = 100.0
+_sections_unfolded = [ "Transform" ]
+
+[node name="Tween" type="Tween" parent="." index="1"]
+
+repeat = false
+playback_process_mode = 1
+playback_speed = 1.0
+playback/active = false
+playback/repeat = false
+playback/speed = 1.0
+_sections_unfolded = [ "playback" ]
+
+[node name="OmniLight" type="OmniLight" parent="." index="2"]
+
+layers = 1
+light_color = Color( 1, 1, 1, 1 )
+light_energy = 6.0
+light_indirect_energy = 2.0
+light_negative = false
+light_specular = 0.5
+light_bake_mode = 0
+light_cull_mask = -1
+shadow_enabled = true
+shadow_color = Color( 0, 0, 0, 1 )
+shadow_bias = 0.15
+shadow_contact = 0.0
+shadow_reverse_cull_face = true
+editor_only = false
+omni_range = 4.0
+omni_attenuation = 1.0
+omni_shadow_mode = 1
+omni_shadow_detail = 1
+_sections_unfolded = [ "Light", "Omni", "Shadow" ]
+
+[node name="RayCast" type="RayCast" parent="." index="3"]
+
+enabled = true
+exclude_parent = true
+cast_to = Vector3( 0, 0, -2 )
+collision_mask = 2
+
+[node name="RayCastBack" type="RayCast" parent="." index="4"]
+
+enabled = true
+exclude_parent = true
+cast_to = Vector3( 0, 0, 2 )
+collision_mask = 2
+
+[node name="Footsteps" type="AudioStreamPlayer" parent="." index="5"]
+
+stream = ExtResource( 2 )
+volume_db = 0.0
+pitch_scale = 1.0
+autoplay = false
+mix_target = 0
+bus = "Master"
+
+

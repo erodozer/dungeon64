@@ -1,0 +1,60 @@
+[gd_scene load_steps=7 format=2]
+
+[ext_resource path="res://clamp.shader" type="Shader" id=1]
+[ext_resource path="res://assets/tonemaps/tonemap.png" type="Texture" id=2]
+[ext_resource path="res://assets/tonemaps/tonemap2.png" type="Texture" id=3]
+[ext_resource path="res://assets/tonemaps/tonemap3.png" type="Texture" id=4]
+
+[sub_resource type="ShaderMaterial" id=1]
+
+render_priority = 0
+shader = ExtResource( 1 )
+shader_param/enabled = true
+shader_param/tonemap = ExtResource( 2 )
+_sections_unfolded = [ "shader_param" ]
+
+[sub_resource type="GDScript" id=2]
+
+script/source = "extends Control
+
+export(Array) var tones = []
+var tone = 0 setget _set_tone
+
+func _set_tone(v):
+	tone = v
+	self.material.set_shader_param(\"tonemap\", tones[tone])
+
+func _ready():
+	self.material.set_shader_param(\"tonemap\", tones[tone])
+
+func _unhandled_input(event):
+	if event.is_action_pressed(\"cycle_tone\"):
+		if tone + 1 >= len(tones):
+			tone = 0
+		else:
+			tone += 1
+		self.material.set_shader_param(\"tonemap\", tones[tone])
+
+"
+_sections_unfolded = [ "Resource" ]
+
+[node name="Screen" type="ColorRect"]
+
+visible = false
+material = SubResource( 1 )
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+rect_pivot_offset = Vector2( 32, 32 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+color = Color( 1, 1, 1, 1 )
+script = SubResource( 2 )
+_sections_unfolded = [ "Material" ]
+tones = [ ExtResource( 2 ), ExtResource( 3 ), ExtResource( 4 ) ]
+
+

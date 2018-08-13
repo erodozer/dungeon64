@@ -1,0 +1,15 @@
+[remap]
+
+importer="ogg_vorbis"
+type="AudioStreamOGGVorbis"
+path="res://.import/_PerituneMaterial_Rapid3.ogg-c2f4571c21bd4d41e7340d04cb9571fc.oggstr"
+
+[deps]
+
+source_file="res://assets/bgm/_PerituneMaterial_Rapid3.ogg"
+dest_files=[ "res://.import/_PerituneMaterial_Rapid3.ogg-c2f4571c21bd4d41e7340d04cb9571fc.oggstr" ]
+
+[params]
+
+loop=true
+loop_offset=0
